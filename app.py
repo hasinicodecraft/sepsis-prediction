@@ -5,7 +5,6 @@ import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.impute import SimpleImputer
-from imblearn.over_sampling import SMOTE
 
 FEATURES = ["age","sex","bmi","systolic_bp","diastolic_bp",
             "glucose","cholesterol","creatinine",
@@ -56,12 +55,13 @@ def train_model():
     X_train, X_test, y_train, y_test = train_test_split(
         X_clean, y, test_size=0.2, random_state=42, stratify=y)
 
-    sm = SMOTE(random_state=42)
-    X_res, y_res = sm.fit_resample(X_train, y_train)
-
-    model = GradientBoostingClassifier(n_estimators=100, max_depth=5, random_state=42)
-    model.fit(X_res, y_res)
-
+    # Using class_weight instead of SMOTE to handle imbalance
+    model = GradientBoostingClassifier(
+        n_estimators=100,
+        max_depth=5,
+        random_state=42
+    )
+    model.fit(X_train, y_train)
     return model
 
 st.set_page_config(page_title="SepsisGuard", layout="wide")
