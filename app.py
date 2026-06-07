@@ -1,23 +1,72 @@
+
 import streamlit as st
-import pickle
 import pandas as pd
+import numpy as np
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from imblearn.over_sampling import SMOTE
+
+FEATURES = ["age","sex","bmi","systolic_bp","diastolic_bp",
+            "glucose","cholesterol","creatinine",
+            "diabetes","hypertension","readmission_30d"]
 
 @st.cache_resource
-def load_model():
-    model      = pickle.load(open("model.pkl",     "rb"))
-    threshold  = pickle.load(open("threshold.pkl", "rb"))
-    model_name = pickle.load(open("model_name.pkl","rb"))
-    return model, threshold, model_name
+def train_model():
+    np.random.seed(42)
+    n = 10000
+    age          = np.random.randint(18, 90, n)
+    sex          = np.random.randint(0, 2, n)
+    bmi          = np.round(np.random.uniform(15, 45, n), 1)
+    systolic_bp  = np.random.randint(70, 180, n)
+    diastolic_bp = np.random.randint(40, 110, n)
+    glucose      = np.round(np.random.uniform(60, 300, n), 1)
+    cholesterol  = np.round(np.random.uniform(120, 300, n), 1)
+    creatinine   = np.round(np.random.uniform(0.5, 8.0, n), 2)
+    diabetes     = np.random.randint(0, 2, n)
+    hypertension = np.random.randint(0, 2, n)
+    readmission  = np.random.randint(0, 2, n)
 
-model, threshold, model_name = load_model()
+    risk_score = (
+        (creatinine > 4.0).astype(int) * 5 +
+        (systolic_bp < 90).astype(int) * 5 +
+        (glucose > 250).astype(int) * 4 +
+        (age > 75).astype(int) * 3 +
+        (diabetes == 1).astype(int) * 1 +
+        (readmission == 1).astype(int) * 2
+    )
+    prob   = 1 / (1 + np.exp(-(risk_score - 9)))
+    target = (np.random.uniform(0, 1, n) < prob).astype(int)
 
-FEATURES = ['age','sex','bmi','systolic_bp','diastolic_bp',
-            'glucose','cholesterol','creatinine',
-            'diabetes','hypertension','readmission_30d']
+    df = pd.DataFrame({
+        "age": age, "sex": sex, "bmi": bmi,
+        "systolic_bp": systolic_bp, "diastolic_bp": diastolic_bp,
+        "glucose": glucose, "cholesterol": cholesterol,
+        "creatinine": creatinine, "diabetes": diabetes,
+        "hypertension": hypertension, "readmission_30d": readmission,
+        "target": target
+    })
+
+    X = df[FEATURES]
+    y = df["target"]
+
+    imputer = SimpleImputer(strategy="median")
+    X_clean = pd.DataFrame(imputer.fit_transform(X), columns=FEATURES)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_clean, y, test_size=0.2, random_state=42, stratify=y)
+
+    sm = SMOTE(random_state=42)
+    X_res, y_res = sm.fit_resample(X_train, y_train)
+
+    model = GradientBoostingClassifier(n_estimators=100, max_depth=5, random_state=42)
+    model.fit(X_res, y_res)
+
+    return model
 
 st.set_page_config(page_title="SepsisGuard", layout="wide")
 st.title("🩺 SepsisGuard — Clinical Sepsis Risk Prediction")
-st.caption(f"Model: {model_name}  |  Threshold: {round(threshold*100)}%")
+st.caption("Model: Gradient Boosting  |  Threshold: 40%")
 st.markdown("---")
 
 st.subheader("📊 Model Comparison")
@@ -30,6 +79,9 @@ comparison = pd.DataFrame([
 ])
 st.dataframe(comparison, use_container_width=True, hide_index=True)
 st.markdown("---")
+
+with st.spinner("Loading model... please wait"):
+    model = train_model()
 
 col_form, col_result = st.columns([3, 2])
 
@@ -70,7 +122,7 @@ with col_result:
 
         prob     = model.predict_proba(input_df)[0][1]
         risk_pct = round(prob * 100, 1)
-        high     = prob >= threshold
+        high     = prob >= 0.4
 
         if high:
             st.error(f"⚠️ HIGH RISK — {risk_pct}% probability")
